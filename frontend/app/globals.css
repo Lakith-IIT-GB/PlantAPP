@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 150 40% 97%;
+  --foreground: 142 33% 20%;
+  --card: 150 40% 97%;
+  --card-foreground: 142 33% 20%;
+  --popover: 150 40% 97%;
+  --popover-foreground: 142 33% 20%;
+  --primary: 142 76% 36%;
+  --primary-foreground: 144 100% 97%;
+  --secondary: 120 40% 93%;
+  --secondary-foreground: 142 33% 20%;
+  --muted: 120 40% 93%;
+  --muted-foreground: 142 33% 45%;
+  --accent: 142 76% 36%;
+  --accent-foreground: 144 100% 97%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 142 33% 90%;
+  --input: 142 33% 90%;
+  --ring: 142 76% 36%;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: 142 33% 5%;
+  --foreground: 144 100% 97%;
+  --card: 142 33% 5%;
+  --card-foreground: 144 100% 97%;
+  --popover: 142 33% 5%;
+  --popover-foreground: 144 100% 97%;
+  --primary: 142 76% 36%;
+  --primary-foreground: 144 100% 97%;
+  --secondary: 142 33% 15%;
+  --secondary-foreground: 144 100% 97%;
+  --muted: 142 33% 15%;
+  --muted-foreground: 142 33% 70%;
+  --accent: 142 76% 36%;
+  --accent-foreground: 144 100% 97%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 144 100% 97%;
+  --border: 142 33% 15%;
+  --input: 142 33% 15%;
+  --ring: 142 76% 36%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    background-image: url('https://images.unsplash.com/photo-1491147334573-44cbb4602074?auto=format&fit=crop&q=80&w=2787&ixlib=rb-4.0.3');
+    background-size: cover;
+    background-attachment: fixed;
+    background-position: center;
+  }
+}
