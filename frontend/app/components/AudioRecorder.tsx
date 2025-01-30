@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -11,8 +11,10 @@ interface AudioRecorderProps {
 export function AudioRecorder({ onAudioCapture }: AudioRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [timer, setTimer] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const startRecording = async () => {
     try {
@@ -22,20 +24,22 @@ export function AudioRecorder({ onAudioCapture }: AudioRecorderProps) {
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
+        chunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: 'audio/mp3' });
+        const audioBlob = new Blob(chunksRef.current, { type: 'audio/wav' });
         onAudioCapture(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
+        clearInterval(timerRef.current!);
+        setTimer(0);
       };
 
       mediaRecorder.start();
       setIsRecording(true);
       setIsPaused(false);
+      timerRef.current = setInterval(() => {
+        setTimer((prev) => prev + 1);
+      }, 1000);
     } catch (error) {
       console.error('Error accessing microphone:', error);
     }
@@ -46,6 +50,7 @@ export function AudioRecorder({ onAudioCapture }: AudioRecorderProps) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       setIsPaused(false);
+      clearInterval(timerRef.current!);
     }
   };
 
@@ -53,44 +58,34 @@ export function AudioRecorder({ onAudioCapture }: AudioRecorderProps) {
     if (mediaRecorderRef.current) {
       if (isPaused) {
         mediaRecorderRef.current.resume();
+        timerRef.current = setInterval(() => {
+          setTimer((prev) => prev + 1);
+        }, 1000);
       } else {
         mediaRecorderRef.current.pause();
+        clearInterval(timerRef.current!);
       }
       setIsPaused(!isPaused);
     }
   };
 
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60);
+    const seconds = time % 60;
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  };
+
   return (
-    <div className="flex gap-2">
-      {!isRecording ? (
-        <Button
-          onClick={startRecording}
-          variant="outline"
-          size="icon"
-          className="h-10 w-10"
-        >
-          <Mic className="h-4 w-4" />
+    <div className="flex gap-2 items-center">
+      <Button onClick={isRecording ? stopRecording : startRecording}>
+        {isRecording ? <Square /> : <Mic />}
+      </Button>
+      {isRecording && (
+        <Button onClick={togglePause}>
+          {isPaused ? <Play /> : <Pause />}
         </Button>
-      ) : (
-        <>
-          <Button
-            onClick={togglePause}
-            variant="outline"
-            size="icon"
-            className="h-10 w-10"
-          >
-            {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-          </Button>
-          <Button
-            onClick={stopRecording}
-            variant="outline"
-            size="icon"
-            className="h-10 w-10"
-          >
-            <Square className="h-4 w-4" />
-          </Button>
-        </>
       )}
+      {isRecording && <span>{formatTime(timer)}</span>}
     </div>
   );
 }

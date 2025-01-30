@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { AudioRecorder } from './AudioRecorder';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import WebSocketComponent from '@/app/components/WebSocketComponent';
 
 interface Message {
   id: string;
@@ -143,6 +144,7 @@ export function ChatInterface() {
           </Button>
         </div>
       </div>
+      <WebSocketComponent />
     </div>
   );
 }
