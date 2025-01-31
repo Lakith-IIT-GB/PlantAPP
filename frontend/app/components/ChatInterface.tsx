@@ -1,18 +1,15 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
-import { Paperclip, Send, Leaf } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useState, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { AudioRecorder } from './AudioRecorder';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
-import WebSocketComponent from '@/app/components/WebSocketComponent';
+import { Paperclip, Send } from 'lucide-react';
 
 interface Message {
   id: string;
   content: string;
-  type: 'text' | 'audio' | 'file';
+  type: 'text' | 'file' | 'audio';
   sender: 'user' | 'other';
   fileUrl?: string;
   fileName?: string;
@@ -26,7 +23,49 @@ export function ChatInterface() {
     sender: 'other'
   }]);
   const [inputMessage, setInputMessage] = useState('');
+  const [ws, setWs] = useState<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  const simulateTyping = (fullMessage: string) => {
+    let currentMessage = "";
+    let index = 0;
+
+    const interval = setInterval(() => {
+      if (index < fullMessage.length) {
+        currentMessage += fullMessage[index];
+        setMessages(prev => prev.map((msg, i) => 
+          i === prev.length - 1 
+            ? { ...msg, content: currentMessage }
+            : msg
+        ));
+        index++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 25);
+  };
+
+  useEffect(() => {
+    const websocket = new WebSocket('ws://localhost:8000/ws');
+    
+    websocket.onmessage = (event) => {
+      const response = event.data;
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: '',
+        type: 'text',
+        sender: 'other'
+      }]);
+      simulateTyping(response);
+    };
+
+    setWs(websocket);
+
+    return () => {
+      websocket.close();
+    };
+  }, []);
 
   const handleSendMessage = () => {
     if (inputMessage.trim()) {
@@ -36,64 +75,53 @@ export function ChatInterface() {
         type: 'text',
         sender: 'user',
       };
-      setMessages([...messages, newMessage]);
+      setMessages(prev => [...prev, newMessage]);
+      
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(inputMessage);
+      }
+      
       setInputMessage('');
     }
-  };
-
-  const handleAudioCapture = (audioBlob: Blob) => {
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content: 'Audio message',
-      type: 'audio',
-      sender: 'user',
-      fileUrl: audioUrl,
-    };
-    setMessages([...messages, newMessage]);
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      const fileUrl = URL.createObjectURL(file);
-      const newMessage: Message = {
-        id: Date.now().toString(),
-        content: 'File attachment',
-        type: 'file',
-        sender: 'user',
-        fileUrl,
-        fileName: file.name,
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const fileUrl = e.target?.result as string;
+        const newMessage: Message = {
+          id: Date.now().toString(),
+          content: 'File uploaded',
+          type: 'file',
+          sender: 'user',
+          fileUrl,
+          fileName: file.name
+        };
+        setMessages(prev => [...prev, newMessage]);
       };
-      setMessages([...messages, newMessage]);
+      reader.readAsDataURL(file);
     }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-24rem)] bg-white/95 backdrop-blur-sm border-2 border-primary/20 rounded-xl shadow-xl overflow-hidden">
-      <div className="bg-primary/10 p-4 border-b border-primary/20">
-        <div className="flex items-center gap-2">
-          <Leaf className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold text-primary">Plant Care Chat</h2>
-        </div>
-      </div>
-      <ScrollArea className="flex-1 p-4">
+    <div className="flex flex-col h-[600px] border rounded-lg bg-white">
+      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.map((message) => (
             <div
               key={message.id}
-              className={cn(
-                "flex",
+              className={`flex ${
                 message.sender === 'user' ? 'justify-end' : 'justify-start'
-              )}
+              }`}
             >
               <div
-                className={cn(
-                  "max-w-[80%] rounded-xl p-3 shadow-md",
+                className={`rounded-lg px-4 py-2 max-w-[80%] ${
                   message.sender === 'user'
                     ? 'bg-primary text-primary-foreground'
-                    : 'bg-white text-foreground border border-primary/20'
-                )}
+                    : 'bg-muted'
+                }`}
               >
                 {message.type === 'text' && <p className="font-medium">{message.content}</p>}
                 {message.type === 'audio' && (
@@ -118,33 +146,34 @@ export function ChatInterface() {
       <div className="p-4 border-t border-primary/20 bg-white/80">
         <div className="flex items-center gap-2">
           <Input
+            type="text"
+            placeholder="Type a message..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder="Ask about your plants..."
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-            className="flex-1 bg-white border-primary/20 focus:border-primary/40"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleSendMessage();
+              }
+            }}
           />
           <input
             type="file"
             ref={fileInputRef}
-            onChange={handleFileUpload}
             className="hidden"
+            onChange={handleFileUpload}
           />
           <Button
-            onClick={() => fileInputRef.current?.click()}
-            variant="outline"
             size="icon"
-            className="h-10 w-10 border-primary/20 hover:bg-primary/10"
+            variant="ghost"
+            onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip className="h-4 w-4" />
           </Button>
-          <AudioRecorder onAudioCapture={handleAudioCapture} />
-          <Button onClick={handleSendMessage} size="icon" className="h-10 w-10">
+          <Button size="icon" onClick={handleSendMessage}>
             <Send className="h-4 w-4" />
           </Button>
         </div>
       </div>
-      <WebSocketComponent />
     </div>
   );
 }
