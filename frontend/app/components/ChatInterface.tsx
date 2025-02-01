@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Paperclip, Send } from 'lucide-react';
+import { Paperclip, Send, Mic } from 'lucide-react';
+import { AudioRecorder } from './AudioRecorder';
 
 interface Message {
   id: string;
@@ -13,6 +14,7 @@ interface Message {
   sender: 'user' | 'other';
   fileUrl?: string;
   fileName?: string;
+  audioUrl?: string;
 }
 
 export function ChatInterface() {
@@ -24,6 +26,7 @@ export function ChatInterface() {
   }]);
   const [inputMessage, setInputMessage] = useState('');
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [showAudioRecorder, setShowAudioRecorder] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -105,6 +108,23 @@ export function ChatInterface() {
     }
   };
 
+  const handleAudioCapture = (audioBlob: Blob) => {
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      content: 'Audio message',
+      type: 'audio',
+      sender: 'user',
+      audioUrl
+    };
+    setMessages(prev => [...prev, newMessage]);
+    setShowAudioRecorder(false);
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(audioBlob);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[600px] border rounded-lg bg-white">
       <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
@@ -125,7 +145,7 @@ export function ChatInterface() {
               >
                 {message.type === 'text' && <p className="font-medium">{message.content}</p>}
                 {message.type === 'audio' && (
-                  <audio controls src={message.fileUrl} className="max-w-full" />
+                  <audio controls src={message.audioUrl} className="max-w-full" />
                 )}
                 {message.type === 'file' && (
                   <a
@@ -169,10 +189,22 @@ export function ChatInterface() {
           >
             <Paperclip className="h-4 w-4" />
           </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => setShowAudioRecorder(!showAudioRecorder)}
+          >
+            <Mic className="h-4 w-4" />
+          </Button>
           <Button size="icon" onClick={handleSendMessage}>
             <Send className="h-4 w-4" />
           </Button>
         </div>
+        {showAudioRecorder && (
+          <div className="mt-2">
+            <AudioRecorder onAudioCapture={handleAudioCapture} />
+          </div>
+        )}
       </div>
     </div>
   );
