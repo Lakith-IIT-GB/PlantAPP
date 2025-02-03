@@ -10,11 +10,14 @@ import { AudioRecorder } from './AudioRecorder';
 interface Message {
   id: string;
   content: string;
-  type: 'text' | 'file' | 'audio';
+  type: 'text' | 'file' | 'audio' | 'image';
   sender: 'user' | 'other';
   fileUrl?: string;
   fileName?: string;
   audioUrl?: string;
+  imageUrl?: string;
+  isTyping?: boolean;
+  displayedContent?: string;
 }
 
 export function ChatInterface() {
@@ -22,7 +25,9 @@ export function ChatInterface() {
     id: '1',
     content: 'Hello! I\'m your plant care assistant. How can I help you with your plants today? 🌿',
     type: 'text',
-    sender: 'other'
+    sender: 'other',
+    isTyping: true,
+    displayedContent: ''
   }]);
   const [inputMessage, setInputMessage] = useState('');
   const [ws, setWs] = useState<WebSocket | null>(null);
@@ -30,37 +35,54 @@ export function ChatInterface() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const simulateTyping = (fullMessage: string) => {
-    let currentMessage = "";
-    let index = 0;
+  const simulateTyping = (fullMessage: string, messageId: string) => {
+    let currentText = "";
+    let charIndex = 0;
 
-    const interval = setInterval(() => {
-      if (index < fullMessage.length) {
-        currentMessage += fullMessage[index];
-        setMessages(prev => prev.map((msg, i) => 
-          i === prev.length - 1 
-            ? { ...msg, content: currentMessage }
+    const typeChar = () => {
+      if (charIndex < fullMessage.length) {
+        currentText += fullMessage[charIndex];
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, displayedContent: currentText, isTyping: true }
             : msg
         ));
-        index++;
+        charIndex++;
+        setTimeout(typeChar, 25);
       } else {
-        clearInterval(interval);
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, isTyping: false }
+            : msg
+        ));
       }
-    }, 25);
+    };
+
+    typeChar();
   };
+
+  useEffect(() => {
+    const initialMessage = messages[0];
+    simulateTyping(initialMessage.content, initialMessage.id);
+  }, []); // Initial greeting animation
 
   useEffect(() => {
     const websocket = new WebSocket('ws://localhost:8000/ws');
     
     websocket.onmessage = (event) => {
       const response = event.data;
+      const messageId = Date.now().toString();
+      
       setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        content: '',
+        id: messageId,
+        content: response,
         type: 'text',
-        sender: 'other'
+        sender: 'other',
+        isTyping: true,
+        displayedContent: ''
       }]);
-      simulateTyping(response);
+
+      simulateTyping(response, messageId);
     };
 
     setWs(websocket);
@@ -88,40 +110,45 @@ export function ChatInterface() {
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const fileUrl = e.target?.result as string;
-        const newMessage: Message = {
-          id: Date.now().toString(),
-          content: 'File uploaded',
-          type: 'file',
-          sender: 'user',
-          fileUrl,
-          fileName: file.name
-        };
-        setMessages(prev => [...prev, newMessage]);
+    if (file && file.type.startsWith("image/")) {
+      const imageUrl = URL.createObjectURL(file);
+      
+      const newImageMessage: Message = {
+        id: Date.now().toString(),
+        content: '',
+        type: "image",
+        sender: "user",
+        imageUrl: imageUrl,
       };
-      reader.readAsDataURL(file);
-    }
-  };
+      setMessages(prev => [...prev, newImageMessage]);
 
-  const handleAudioCapture = (audioBlob: Blob) => {
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content: 'Audio message',
-      type: 'audio',
-      sender: 'user',
-      audioUrl
-    };
-    setMessages(prev => [...prev, newMessage]);
-    setShowAudioRecorder(false);
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      try {
+        const response = await fetch("http://localhost:8000/upload-image", {
+          method: "POST",
+          body: formData,
+        });
 
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(audioBlob);
+        const data = await response.json();
+        if (data.analysis) {
+          const messageId = Date.now().toString();
+          setMessages(prev => [...prev, {
+            id: messageId,
+            content: data.analysis,
+            type: "text",
+            sender: "other",
+            isTyping: true,
+            displayedContent: ''
+          }]);
+          simulateTyping(data.analysis, messageId);
+        }
+      } catch (error) {
+        console.error("Error uploading image:", error);
+      }
     }
   };
 
@@ -143,19 +170,16 @@ export function ChatInterface() {
                     : 'bg-muted'
                 }`}
               >
-                {message.type === 'text' && <p className="font-medium">{message.content}</p>}
-                {message.type === 'audio' && (
-                  <audio controls src={message.audioUrl} className="max-w-full" />
+                {message.type === 'text' && (
+                  <p className="font-medium whitespace-pre-line">
+                    {message.sender === 'other' 
+                      ? (message.displayedContent || '') + (message.isTyping ? '▋' : '')
+                      : message.content
+                    }
+                  </p>
                 )}
-                {message.type === 'file' && (
-                  <a
-                    href={message.fileUrl}
-                    download={message.fileName}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                    {message.fileName}
-                  </a>
+                {message.type === 'image' && message.imageUrl && (
+                  <img src={message.imageUrl} alt="Uploaded plant" className="max-w-full rounded" />
                 )}
               </div>
             </div>
@@ -202,7 +226,7 @@ export function ChatInterface() {
         </div>
         {showAudioRecorder && (
           <div className="mt-2">
-            <AudioRecorder onAudioCapture={handleAudioCapture} />
+            <AudioRecorder onAudioCapture={handleFileUpload} />
           </div>
         )}
       </div>
