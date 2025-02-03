@@ -10,44 +10,28 @@ import { AudioRecorder } from './AudioRecorder';
 interface Message {
   id: string;
   content: string;
-  type: 'text' | 'file' | 'audio';
+  type: 'text' | 'file' | 'audio' | 'image';
   sender: 'user' | 'other';
   fileUrl?: string;
   fileName?: string;
   audioUrl?: string;
+  imageUrl?: string;
 }
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>([{
-    id: '1',
-    content: 'Hello! I\'m your plant care assistant. How can I help you with your plants today? 🌿',
-    type: 'text',
-    sender: 'other'
-  }]);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      content: 'Hello! I\'m your plant care assistant. How can I help you with your plants today? 🌿',
+      type: 'text',
+      sender: 'other'
+    }
+  ]);
   const [inputMessage, setInputMessage] = useState('');
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [showAudioRecorder, setShowAudioRecorder] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-
-  const simulateTyping = (fullMessage: string) => {
-    let currentMessage = "";
-    let index = 0;
-
-    const interval = setInterval(() => {
-      if (index < fullMessage.length) {
-        currentMessage += fullMessage[index];
-        setMessages(prev => prev.map((msg, i) => 
-          i === prev.length - 1 
-            ? { ...msg, content: currentMessage }
-            : msg
-        ));
-        index++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 25);
-  };
 
   useEffect(() => {
     const websocket = new WebSocket('ws://localhost:8000/ws');
@@ -56,11 +40,10 @@ export function ChatInterface() {
       const response = event.data;
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
-        content: '',
+        content: response,
         type: 'text',
         sender: 'other'
       }]);
-      simulateTyping(response);
     };
 
     setWs(websocket);
@@ -88,23 +71,55 @@ export function ChatInterface() {
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const fileUrl = e.target?.result as string;
-        const newMessage: Message = {
-          id: Date.now().toString(),
-          content: 'File uploaded',
-          type: 'file',
-          sender: 'user',
-          fileUrl,
-          fileName: file.name
-        };
-        setMessages(prev => [...prev, newMessage]);
+
+    if (file && file.type.startsWith("image/")) {
+      const imageUrl = URL.createObjectURL(file);
+      
+      // Add user's image message
+      const newImageMessage: Message = {
+        id: Date.now().toString(),
+        content: '',
+        type: "image",
+        sender: "user",
+        imageUrl: imageUrl,
       };
-      reader.readAsDataURL(file);
+      setMessages(prev => [...prev, newImageMessage]);
+
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      try {
+        const response = await fetch("http://localhost:8000/upload-image", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (data.analysis) {
+          // Add bot's analysis response
+          const newAnalysisMessage: Message = {
+            id: Date.now().toString(),
+            content: data.analysis,
+            type: "text",
+            sender: "other",
+          };
+          setMessages(prev => [...prev, newAnalysisMessage]);
+        } else if (data.error) {
+          console.error("Error analyzing image:", data.error);
+          // Add error message to chat
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            content: "Sorry, I couldn't analyze that image. Please try again.",
+            type: "text",
+            sender: "other",
+          }]);
+        }
+      } catch (error) {
+        console.error("Error uploading image:", error);
+      }
     }
   };
 
@@ -143,19 +158,12 @@ export function ChatInterface() {
                     : 'bg-muted'
                 }`}
               >
-                {message.type === 'text' && <p className="font-medium">{message.content}</p>}
+                {message.type === 'text' && <p className="font-medium whitespace-pre-line">{message.content}</p>}
                 {message.type === 'audio' && (
                   <audio controls src={message.audioUrl} className="max-w-full" />
                 )}
-                {message.type === 'file' && (
-                  <a
-                    href={message.fileUrl}
-                    download={message.fileName}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                    {message.fileName}
-                  </a>
+                {message.type === "image" && message.imageUrl && (
+                  <img src={message.imageUrl} alt="Uploaded Image" className="max-w-full h-auto rounded-lg shadow-md" />
                 )}
               </div>
             </div>
@@ -170,7 +178,7 @@ export function ChatInterface() {
             placeholder="Type a message..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 handleSendMessage();
               }
@@ -180,6 +188,7 @@ export function ChatInterface() {
             type="file"
             ref={fileInputRef}
             className="hidden"
+            accept="image/*"
             onChange={handleFileUpload}
           />
           <Button

@@ -1,10 +1,22 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import asyncio
 from rag import custom_query_with_groq, load_faiss_index, search_faiss_index, SentenceTransformer
 import logging
+import base64
+from analyze_plant_image import analyze_plant_image
 
 app = FastAPI()
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # You can restrict this to ["http://localhost:3000"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -70,7 +82,18 @@ async def handle_query(query: str):
     except Exception as e:
         logger.error(f"Error handling query: {e}")
         return "An error occurred while processing your query.", []
-
+    
+@app.post("/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
+        analysis_result = await analyze_plant_image(image_bytes)  # Add await here
+        
+        return {"analysis": analysis_result}
+    except Exception as e:
+        logger.error(f"Error analyzing image: {e}")
+        return {"error": str(e)}
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
