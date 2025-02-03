@@ -16,34 +16,73 @@ interface Message {
   fileName?: string;
   audioUrl?: string;
   imageUrl?: string;
+  isTyping?: boolean;
+  displayedContent?: string;
 }
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: 'Hello! I\'m your plant care assistant. How can I help you with your plants today? 🌿',
-      type: 'text',
-      sender: 'other'
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([{
+    id: '1',
+    content: 'Hello! I\'m your plant care assistant. How can I help you with your plants today? 🌿',
+    type: 'text',
+    sender: 'other',
+    isTyping: true,
+    displayedContent: ''
+  }]);
   const [inputMessage, setInputMessage] = useState('');
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [showAudioRecorder, setShowAudioRecorder] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  const simulateTyping = (fullMessage: string, messageId: string) => {
+    let currentText = "";
+    let charIndex = 0;
+
+    const typeChar = () => {
+      if (charIndex < fullMessage.length) {
+        currentText += fullMessage[charIndex];
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, displayedContent: currentText, isTyping: true }
+            : msg
+        ));
+        charIndex++;
+        setTimeout(typeChar, 25);
+      } else {
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, isTyping: false }
+            : msg
+        ));
+      }
+    };
+
+    typeChar();
+  };
+
+  useEffect(() => {
+    const initialMessage = messages[0];
+    simulateTyping(initialMessage.content, initialMessage.id);
+  }, []); // Initial greeting animation
+
   useEffect(() => {
     const websocket = new WebSocket('ws://localhost:8000/ws');
     
     websocket.onmessage = (event) => {
       const response = event.data;
+      const messageId = Date.now().toString();
+      
       setMessages(prev => [...prev, {
-        id: Date.now().toString(),
+        id: messageId,
         content: response,
         type: 'text',
-        sender: 'other'
+        sender: 'other',
+        isTyping: true,
+        displayedContent: ''
       }]);
+
+      simulateTyping(response, messageId);
     };
 
     setWs(websocket);
@@ -73,11 +112,9 @@ export function ChatInterface() {
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-
     if (file && file.type.startsWith("image/")) {
       const imageUrl = URL.createObjectURL(file);
       
-      // Add user's image message
       const newImageMessage: Message = {
         id: Date.now().toString(),
         content: '',
@@ -97,46 +134,21 @@ export function ChatInterface() {
         });
 
         const data = await response.json();
-
         if (data.analysis) {
-          // Add bot's analysis response
-          const newAnalysisMessage: Message = {
-            id: Date.now().toString(),
+          const messageId = Date.now().toString();
+          setMessages(prev => [...prev, {
+            id: messageId,
             content: data.analysis,
             type: "text",
             sender: "other",
-          };
-          setMessages(prev => [...prev, newAnalysisMessage]);
-        } else if (data.error) {
-          console.error("Error analyzing image:", data.error);
-          // Add error message to chat
-          setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            content: "Sorry, I couldn't analyze that image. Please try again.",
-            type: "text",
-            sender: "other",
+            isTyping: true,
+            displayedContent: ''
           }]);
+          simulateTyping(data.analysis, messageId);
         }
       } catch (error) {
         console.error("Error uploading image:", error);
       }
-    }
-  };
-
-  const handleAudioCapture = (audioBlob: Blob) => {
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content: 'Audio message',
-      type: 'audio',
-      sender: 'user',
-      audioUrl
-    };
-    setMessages(prev => [...prev, newMessage]);
-    setShowAudioRecorder(false);
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(audioBlob);
     }
   };
 
@@ -158,12 +170,16 @@ export function ChatInterface() {
                     : 'bg-muted'
                 }`}
               >
-                {message.type === 'text' && <p className="font-medium whitespace-pre-line">{message.content}</p>}
-                {message.type === 'audio' && (
-                  <audio controls src={message.audioUrl} className="max-w-full" />
+                {message.type === 'text' && (
+                  <p className="font-medium whitespace-pre-line">
+                    {message.sender === 'other' 
+                      ? (message.displayedContent || '') + (message.isTyping ? '▋' : '')
+                      : message.content
+                    }
+                  </p>
                 )}
-                {message.type === "image" && message.imageUrl && (
-                  <img src={message.imageUrl} alt="Uploaded Image" className="max-w-full h-auto rounded-lg shadow-md" />
+                {message.type === 'image' && message.imageUrl && (
+                  <img src={message.imageUrl} alt="Uploaded plant" className="max-w-full rounded" />
                 )}
               </div>
             </div>
@@ -178,7 +194,7 @@ export function ChatInterface() {
             placeholder="Type a message..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            onKeyDown={(e) => {
+            onKeyPress={(e) => {
               if (e.key === 'Enter') {
                 handleSendMessage();
               }
@@ -188,7 +204,6 @@ export function ChatInterface() {
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept="image/*"
             onChange={handleFileUpload}
           />
           <Button
@@ -211,7 +226,7 @@ export function ChatInterface() {
         </div>
         {showAudioRecorder && (
           <div className="mt-2">
-            <AudioRecorder onAudioCapture={handleAudioCapture} />
+            <AudioRecorder onAudioCapture={handleFileUpload} />
           </div>
         )}
       </div>
