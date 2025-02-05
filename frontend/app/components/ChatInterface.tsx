@@ -110,6 +110,34 @@ export function ChatInterface() {
     }
   };
 
+  const handleAudioCapture = async (audioBlob: Blob) => {
+    const formData = new FormData();
+    formData.append("file", audioBlob, "audio.wav");
+    
+    try {
+      const response = await fetch("http://localhost:8000/upload-audio", {
+        method: "POST",
+        body: formData,
+      });
+  
+      const data = await response.json();
+      if (data.transcript) {
+        const messageId = Date.now().toString();
+        setMessages(prev => [...prev, {
+          id: messageId,
+          content: data.transcript,
+          type: "text",
+          sender: "other",
+          isTyping: true,
+          displayedContent: ''
+        }]);
+        simulateTyping(data.transcript, messageId);
+      }
+    } catch (error) {
+      console.error("Error uploading audio:", error);
+    }
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && file.type.startsWith("image/")) {
@@ -226,7 +254,7 @@ export function ChatInterface() {
         </div>
         {showAudioRecorder && (
           <div className="mt-2">
-            <AudioRecorder onAudioCapture={handleFileUpload} />
+            <AudioRecorder onAudioCapture={handleAudioCapture} />
           </div>
         )}
       </div>
