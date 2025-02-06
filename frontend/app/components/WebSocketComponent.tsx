@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react'; 
 
 const WebSocketComponent: React.FC = () => {
   const [messages, setMessages] = useState<string[]>([]);
@@ -6,7 +6,7 @@ const WebSocketComponent: React.FC = () => {
   const [ws, setWs] = useState<WebSocket | null>(null);
 
   useEffect(() => {
-    const websocket = new WebSocket('ws://localhost:8000/ws');
+    const websocket = new WebSocket('ws://52.207.245.139/ws');
 
     websocket.onopen = () => {
       console.log('Connected to WebSocket');
