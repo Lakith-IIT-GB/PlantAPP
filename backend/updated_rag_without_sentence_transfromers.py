@@ -1,7 +1,6 @@
 import os
 import asyncio
 from groq import AsyncGroq
-from PyPDF2 import PdfReader
 import faiss
 import numpy as np
 import logging
@@ -27,7 +26,7 @@ def load_faiss_index(file_path: str) -> faiss.IndexFlatL2:
 # Load text chunks from a saved file
 def load_text_chunks(file_path: str) -> List[str]:
     with open(file_path, "r", encoding="utf-8") as file:
-        return file.readlines()
+        return [chunk.strip() for chunk in file.read().split("\n---\n") if chunk.strip()]
 
 async def custom_query_with_groq(query: str, relevant_chunks: List[str], history: List[Dict[str, str]] = None) -> Tuple[str, List[str]]:
     try:
@@ -92,7 +91,7 @@ async def handle_query(query: str, history: List[Dict[str, str]] = None) -> Tupl
 async def initialize_rag(index_file: str = "index_file.faiss", chunks_file: str = "text_chunks.txt"):
     global index, all_chunks
     try:
-        index = load_faiss_index("./index_file.faiss")  # Load FAISS index
+        index = load_faiss_index(index_file)  # Load FAISS index
         all_chunks = load_text_chunks(chunks_file)  # Load text chunks
     except Exception as e:
         logger.error(f"Error initializing RAG: {e}")
