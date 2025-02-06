@@ -67,7 +67,7 @@ export function ChatInterface() {
   }, []); // Initial greeting animation
 
   useEffect(() => {
-    const websocket = new WebSocket('ws://52.207.245.139:8000/ws');
+    const websocket = new WebSocket('wss://52.207.245.139:8000/ws');
     
     websocket.onmessage = (event) => {
       const response = event.data;
