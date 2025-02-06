@@ -67,7 +67,7 @@ export function ChatInterface() {
   }, []); // Initial greeting animation
 
   useEffect(() => {
-    const websocket = new WebSocket('wss://e0f0-52-207-245-139.ngrok-free.app:8000/ws');
+    const websocket = new WebSocket('ws://52.207.245.139:8000/ws');
     
     websocket.onmessage = (event) => {
       const response = event.data;
@@ -115,7 +115,7 @@ export function ChatInterface() {
     formData.append("file", audioBlob, "audio.wav");
     
     try {
-      const response = await fetch("https://e0f0-52-207-245-139.ngrok-free.app/upload-audio", {
+      const response = await fetch("http://52.207.245.139/upload-audio", {
         method: "POST",
         body: formData,
       });
@@ -156,7 +156,7 @@ export function ChatInterface() {
       formData.append("file", file);
       
       try {
-        const response = await fetch("https://e0f0-52-207-245-139.ngrok-free.app/upload-image", {
+        const response = await fetch("http://52.207.245.139/upload-image", {
           method: "POST",
           body: formData,
         });
