@@ -1,18 +1,21 @@
+import os
+import asyncio
+import logging
+import faiss
+import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List, Tuple
-import asyncio
-from rag import custom_query_with_groq, load_faiss_index, search_faiss_index, SentenceTransformer
-import logging
-import base64
 from analyze_plant_image import analyze_plant_image
+from updated_rag_without_sentence_transfromers import custom_query_with_groq, load_faiss_index, load_text_chunks
 
+# Initialize FastAPI app
 app = FastAPI()
 
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # You can restrict this to ["http://localhost:3000"]
+    allow_origins=["http://localhost:3000", "https://plant-app-flxr.vercel.app/"],  # Adjust as needed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,6 +25,7 @@ app.add_middleware(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -50,21 +54,49 @@ class ConnectionManager:
 
     def get_history(self, websocket: WebSocket) -> List[Dict[str, str]]:
         return self.conversation_history.get(websocket, [])
+    
     async def broadcast(self, message: str):
         for connection in self.active_connections:
             await connection.send_text(message)
 
 manager = ConnectionManager()
 
-# Load the FAISS index and embedding model once at startup
+# Load FAISS index and text chunks at startup
 index_file_path = "index_file.faiss"
+chunks_file_path = "text_chunks.txt"
+query_embedding_path = "query_embedding.npy"
+
 try:
     index = load_faiss_index(index_file_path)
-    all_chunks = [...]  # Load or define your chunks here
-    embedding_model = SentenceTransformer("all-mpnet-base-v2")
+    all_chunks = load_text_chunks(chunks_file_path)
 except Exception as e:
-    logger.error(f"Failed to load FAISS index or embedding model: {e}")
+    logger.error(f"Failed to load FAISS index or text chunks: {e}")
     raise
+
+async def handle_query(query: str, history: List[Dict[str, str]] = None) -> Tuple[str, List[str]]:
+    try:
+        # Load all precomputed embeddings
+        embeddings = np.load("precomputed_embeddings.npy")
+        
+        # Get index for first embedding only
+        first_embedding = embeddings[0].reshape(1, -1)
+        indices, distances = index.search(first_embedding, 5)
+        
+        # Select relevant chunks
+        relevance_threshold = 0.5
+        top_chunks = []
+        if distances[0][0] <= relevance_threshold:
+            # Convert float indices to integers
+            indices_int = indices[0].astype(int)
+            top_chunks = [all_chunks[i] for i in indices_int if i < len(all_chunks)]
+        
+        response, followups = await custom_query_with_groq(query, top_chunks, history)
+        return response, followups
+        
+    except Exception as e:
+        logger.error(f"Error handling query: {str(e)}")
+        logger.exception("Full traceback:")
+        return "An error occurred while processing your query.", []
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -90,38 +122,16 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
         logging.info("Client disconnected")
 
-async def handle_query(query: str, history: List[Dict[str, str]] = None) -> Tuple[str, List[str]]:
-    try:
-        if history is None:
-            history = []
-            
-        query_embedding = embedding_model.encode([query])
-        indices, distances = search_faiss_index(index, query_embedding)
-        relevance_threshold = 0.5
-        
-        if distances[0][0] > relevance_threshold:
-            top_chunks = []
-        else:
-            top_chunks = [all_chunks[i] for i in indices[0]]
-            
-        response, followups = await custom_query_with_groq(query, top_chunks, history)
-        return response, followups
-        
-    except Exception as e:
-        logger.error(f"Error handling query: {e}")
-        return "An error occurred while processing your query.", []
-    
 @app.post("/upload-image")
 async def upload_image(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
-        analysis_result = await analyze_plant_image(image_bytes)  # Add await here
-        
+        analysis_result = await analyze_plant_image(image_bytes)
         return {"analysis": analysis_result}
     except Exception as e:
         logger.error(f"Error analyzing image: {e}")
         return {"error": str(e)}
-    
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

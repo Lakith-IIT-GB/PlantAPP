@@ -25,8 +25,12 @@ all_chunks = []
 def process_pdf(pdf_path: str, chunk_size: int = 500) -> List[str]:
     reader = PdfReader(pdf_path)
     all_text = ""
+    
     for page in reader.pages:
-        all_text += page.extract_text()
+        text = page.extract_text()
+        if text:
+            all_text += text + "\n"
+
     chunks = [all_text[i:i + chunk_size] for i in range(0, len(all_text), chunk_size)]
     return chunks
 
@@ -39,96 +43,49 @@ def create_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatL2:
     index.add(embeddings)
     return index
 
-def search_faiss_index(index: faiss.IndexFlatL2, query_embedding: np.ndarray, top_k: int = 5) -> Tuple[np.ndarray, np.ndarray]:
-    return index.search(query_embedding, top_k)
-
 def save_faiss_index(index: faiss.IndexFlatL2, file_path: str) -> None:
     faiss.write_index(index, file_path)
 
 def load_faiss_index(file_path: str) -> faiss.IndexFlatL2:
     return faiss.read_index(file_path)
 
-async def custom_query_with_groq(query: str, relevant_chunks: List[str], history: List[Dict[str, str]] = None) -> Tuple[str, List[str]]:
-    try:
-        if history is None:
-            history = []
-            
-        context = "\n".join(relevant_chunks) if relevant_chunks else ""
-        
-        messages = history.copy()
-        messages.append({
-            "role": "system",
-            "content": f"You are a helpful assistant. Use this context to inform your response:\n{context}"
-        })
-        messages.append({
-            "role": "user",
-            "content": query
-        })
-        
-        completion = await client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1000
-        )
-        
-        response = completion.choices[0].message.content
-        
-        followup_prompt = f"Based on the conversation history and current query '{query}', suggest 3 relevant follow-up questions."
-        followup_completion = await client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role": "user", "content": followup_prompt}],
-            temperature=0.7,
-            max_tokens=150
-        )
-        
-        followups = [q.strip() for q in followup_completion.choices[0].message.content.split("\n") if q.strip()]
-        return response, followups[:3]
-        
-    except Exception as e:
-        logger.error(f"Error in custom_query_with_groq: {e}")
-        raise
+def save_query_embeddings_batch(chunks: List[str], output_file: str = "precomputed_embeddings.npy"):
+    """Save embeddings for all chunks to use later."""
+    embeddings = embedding_model.encode(chunks)
+    np.save(output_file, embeddings)
+    return embeddings
 
-async def handle_query(query: str, history: List[Dict[str, str]] = None) -> Tuple[str, List[str]]:
-    try:
-        query_embedding = embedding_model.encode([query]).reshape(1, -1)
-        indices, distances = search_faiss_index(index, query_embedding)
-        
-        relevance_threshold = 0.5
-        if distances[0][0] > relevance_threshold:
-            top_chunks = []
-        else:
-            top_chunks = [all_chunks[i] for i in indices[0]]
-            
-        response, followups = await custom_query_with_groq(query, top_chunks, history)
-        return response, followups
-        
-    except Exception as e:
-        logger.error(f"Error handling query: {e}")
-        return "An error occurred while processing your query.", []
-
-async def initialize_rag(pdf_dir: str = "./document", index_file: str = "index_file.faiss"):
+async def preprocess_and_save():
+    """Run this function locally to generate all necessary files."""
     global index, all_chunks
     
     try:
-        # Process PDFs
+        # Process PDFs and get chunks
+        pdf_dir = "./document"
+        all_chunks = []
         for filename in os.listdir(pdf_dir):
             if filename.endswith(".pdf"):
                 pdf_path = os.path.join(pdf_dir, filename)
                 chunks = process_pdf(pdf_path)
                 all_chunks.extend(chunks)
 
-        # Generate or load index
-        if os.path.exists(index_file):
-            index = load_faiss_index(index_file)
-        else:
-            embeddings = generate_embeddings(all_chunks)
-            index = create_faiss_index(embeddings)
-            save_faiss_index(index, index_file)
-            
+        # Save chunks to file
+        with open("text_chunks.txt", "w", encoding="utf-8") as f:
+            for chunk in all_chunks:
+                f.write(chunk + "\n---\n")  # Add separator between chunks
+
+        # Generate and save embeddings
+        embeddings = save_query_embeddings_batch(all_chunks)
+        
+        # Create and save FAISS index
+        index = create_faiss_index(embeddings)
+        save_faiss_index(index, "index_file.faiss")
+        
+        logger.info("Successfully saved all preprocessing files")
+        
     except Exception as e:
-        logger.error(f"Error initializing RAG: {e}")
+        logger.error(f"Error in preprocessing: {e}")
         raise
 
 if __name__ == "__main__":
-    asyncio.run(initialize_rag())
+    asyncio.run(preprocess_and_save())
